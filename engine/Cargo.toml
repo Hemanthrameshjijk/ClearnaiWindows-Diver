@@ -1,0 +1,22 @@
+[package]
+name = "clearnai-engine"
+version.workspace = true
+edition.workspace = true
+
+# DSP/ML building blocks are reused in place from the sibling checkout rather than
+# copied, so there is one source of truth for WASAPI I/O and the models.
+[dependencies]
+dsp-core = { path = "../../Clearnaiwindows-main/crates/dsp-core" }
+audio-io = { path = "../../Clearnaiwindows-main/crates/audio-io" }
+anyhow = "1"
+
+[target.'cfg(windows)'.dependencies]
+wasapi = "0.24"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO",
+    "Win32_Media",
+    "Win32_System_Threading",
+] }

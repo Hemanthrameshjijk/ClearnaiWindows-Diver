@@ -1,0 +1,24 @@
+# build output
+/target/
+**/x64/
+**/ARM64/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.tlog/
+*.log
+# local-only
+/Cargo.lock.bak
+.vs/
+# private keys must never be committed
+*.pfx
+*.pvk
+*.p12
+*.snk
+
+# test-VM scripts hold a throwaway VM password: keep out of the public repo
+/tools/vm/
+# built test binary
+*.exe

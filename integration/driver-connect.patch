@@ -1,0 +1,113 @@
+--- a/app/src/engine.rs
++++ b/app/src/engine.rs
+@@ -724,10 +724,17 @@
+         }
+         present
+     });
+-    let mic_capture = match physical_mic_id.as_deref() {
+-        Some(id) => MicCapture::start_on_device_id(id, mic_in_p, handles.counters.clone())
+-            .context("starting mic capture on the selected physical microphone device")?,
+-        None => MicCapture::start_default(mic_in_p, handles.counters.clone()).context("starting default mic capture")?,
++    // Hidden test microphone (CLEARNAI_TEST_MIC, see test_input.rs): for machines with no microphone, e.g. the test VM.
++    let mic_capture = match crate::test_input::from_env() {
++        Some(source) => {
++            crate::test_input::start(source, mic_in_p);
++            None
++        }
++        None => Some(match physical_mic_id.as_deref() {
++            Some(id) => MicCapture::start_on_device_id(id, mic_in_p, handles.counters.clone())
++                .context("starting mic capture on the selected physical microphone device")?,
++            None => MicCapture::start_default(mic_in_p, handles.counters.clone()).context("starting default mic capture")?,
++        }),
+     };
+ 
+     // --- Monitor (diagnostic/testing-only): an optional second, independent
+@@ -820,6 +827,10 @@
+         }
+     };
+ 
++    // ClearNAI virtual microphone driver (separate project, see driver_pipe.rs): forwards the final frame to the
++    // driver so apps can pick "ClearNAI Microphone". No driver installed just means the frames are dropped.
++    let driver_pipe = Some(crate::driver_pipe::DriverSink::start());
++
+     // Echo reference: the speaker pipeline copies every frame it plays into this ring, and the mic pipeline's
+     // echo canceller subtracts what that audio does to the mic. A plain ring (not swappable): both ends live
+     // for the life of the process and either side just idles when the other has nothing.
+@@ -837,6 +848,7 @@
+         transcript_stage,
+         mic_studio_stage,
+         driver_writer,
++        driver_pipe,
+         echo_ref_c,
+     )?;
+ 
+@@ -907,7 +919,7 @@
+     )?;
+ 
+     handles.device_switcher = Arc::new(LiveAudioSwitcher {
+-        physical_mic: Mutex::new(Some(mic_capture)),
++        physical_mic: Mutex::new(mic_capture),
+         virtual_mic_render: Mutex::new(virtual_mic_render),
+         monitor_render: Mutex::new(monitor_render),
+         speaker_capture: Mutex::new(speaker_capture),
+@@ -1055,6 +1067,7 @@
+     mut transcript_stage: asr_onnx::pipeline::TranscriptStage,
+     mut studio_stage: Box<dyn Stage>,
+     driver_writer: Option<driver_transport::SharedRingWriter>,
++    mut driver_pipe: Option<crate::driver_pipe::DriverSink>,
+     mut echo_ref: dsp_core::Consumer<f32>,
+ ) -> Result<()> {
+     thread::Builder::new()
+@@ -1206,6 +1219,10 @@
+                 if let Some(writer) = driver_writer.as_ref() {
+                     writer.push_frame(&frame);
+                 }
++                // Same frame to the ClearNAI driver's microphone (queued; a sender thread does the system call).
++                if let Some(pipe) = driver_pipe.as_mut() {
++                    pipe.push_frame(&frame);
++                }
+                 // When the Monitor toggle is off, push real silence instead
+                 // of skipping the push entirely, so the monitor render
+                 // thread doesn't starve/underrun-log just because the user
+--- a/app/src/lib.rs
++++ b/app/src/lib.rs
+@@ -28,6 +28,10 @@
+ pub mod ui_logic;
+ 
+ #[cfg(windows)]
++pub mod driver_pipe;
++#[cfg(windows)]
++pub mod test_input;
++#[cfg(windows)]
+ pub mod engine;
+ #[cfg(windows)]
+ pub mod host;
+--- a/app/Cargo.toml
++++ b/app/Cargo.toml
+@@ -79,7 +79,7 @@
+ # `wasapi::initialize_mta()` COM-init probe, matching the exact `windows`/
+ # `wasapi` versions already pulled in transitively by `audio-io` (see
+ # `crates/audio-io/Cargo.toml`) to avoid duplicate incompatible versions.
+-windows = { version = "0.62", features = ["Wdk_System_SystemServices", "Wdk_Foundation", "Win32_System_SystemInformation"] }
++windows = { version = "0.62", features = ["Wdk_System_SystemServices", "Wdk_Foundation", "Win32_System_SystemInformation", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO"] }
+ wasapi = "0.24"
+ # System-tray icon for the "Minimize to tray" setting (see `src/tray.rs`). Exact pin: published 2026-10-07.
+ tray-icon = { version = "=0.26.1", default-features = false }
+--- a/app/installer.nsi
++++ b/app/installer.nsi
+@@ -241,6 +241,15 @@
+   skip_vbcable:
+ SectionEnd
+ 
++; ClearNAI virtual microphone driver (separate project: ClearnaiWindows-Diver). TEST-SIGNED, so this installer only COPIES
++; the package and its helper scripts to "$INSTDIR\driver"; it never installs the driver, trusts the test certificate or changes
++; any Windows security setting. To use it, run Install-ClearNAI-Driver.ps1 from an elevated PowerShell on a test PC (see
++; driver\README.txt). `/nonfatal`: the folder is not part of this repo, so a build without it (CI) still succeeds.
++Section "ClearNAI driver package (copied, not installed)"
++  SetOutPath "$INSTDIR\driver"
++  File /nonfatal "..\..\ClearnaiWindows-Diver\dist\driver\*.*"
++SectionEnd
++
+ ; After everything is installed (including the optional driver step): start the engine, which opens the window once.
+ Function .onInstSuccess
+   ${IfNot} ${Silent}

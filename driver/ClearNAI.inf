@@ -1,0 +1,22 @@
+; ClearNAI.inf - SKELETON. Replace with a copy of SYSVAD's ComponentizedAudioSample.inf,
+; changing only names/GUIDs (see driver/ClearNAI/README.md).
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = MEDIA
+ClassGuid   = {4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider    = %ProviderName%
+CatalogFile = ClearNAI.cat
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerName% = ClearNAI, NT$ARCH$.10.0...16299
+
+[ClearNAI.NT$ARCH$.10.0...16299]
+%ClearNAI.DeviceDesc% = ClearNAI_Install, ROOT\ClearNAI
+
+; Service, wave/topology and endpoint sections: copy from the SYSVAD reference INF.
+
+[Strings]
+ProviderName        = "ClearNAI"
+ManufacturerName    = "ClearNAI"
+ClearNAI.DeviceDesc = "ClearNAI Virtual Audio Device"

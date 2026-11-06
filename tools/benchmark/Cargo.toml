@@ -1,0 +1,8 @@
+[package]
+name = "clearnai-benchmark"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hound = "3.5"
+anyhow = "1"
